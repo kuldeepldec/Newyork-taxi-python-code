@@ -1,0 +1,54 @@
+#This query calculates number of trips,totaltimeinminutes, number of cabs required by passengerCount in a json format for NYC taxi(Yellow cab only) from GCP Cloud Big query
+for a particular lat long dimension
+
+import os
+from google.cloud import bigquery
+from google.cloud.bigquery.client import Client
+import json
+import flask
+from flask import request
+
+
+app = flask.Flask(__name__)
+app.config["DEBUG"] = True
+
+#get request for home
+@app.route('/', methods=['GET'])
+def home():
+    return '''<h1>Marcura Engineering task</h1>
+    <p>A Prototype API for readingyellow taxi passengerCount data from Bigquery</p>'''
+
+#Setting up google credentials
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = (r'C:\Users\kulde\AppData\Local\Google\Cloud SDK\key.json')
+bq_client = Client()
+client = bigquery.Client()
+
+#Calculating passenger_count from Big query
+@app.route('/marcura/data/engineering', methods=['GET'])
+def api_all():
+    query = """
+    DECLARE statue_of_liberty_long NUMERIC DEFAULT -74.0474287;
+    DECLARE statue_of_liberty_lat NUMERIC DEFAULT 40.6895436;
+    DECLARE statue_of_liberty_distance NUMERIC DEFAULT 3.5;
+
+    SELECT passenger_count as passengerCount,count(*) as numberOfTrips,sum(DATETIME_DIFF(DATETIME(TIMESTAMP(dropoff_datetime)), DATETIME(TIMESTAMP(pickup_datetime)), MINUTE)) as totalTimeInMinutes,ROUND(count(*)/passenger_count,0) as numberOfCabsRequired
+    FROM(
+        SELECT  passenger_count, dropoff_datetime,pickup_datetime,
+        ST_DISTANCE(
+           ST_GEOGPOINT(statue_of_liberty_long, statue_of_liberty_lat),
+           ST_GEOGPOINT(dropoff_longitude, dropoff_latitude)
+        ) AS distance 
+    FROM `bigquery-public-data.new_york_taxi_trips.tlc_yellow_trips_2016`
+    where dropoff_longitude is not null and dropoff_latitude is not null and dropoff_latitude<90.0 and dropoff_latitude>-90.0)
+    where (distance/1000) < statue_of_liberty_distance and passenger_count>=1 and passenger_count<=6
+    group by passenger_count
+    """
+
+    #Converting passenger count from table to json format
+    passenger_count = client.query(query)
+    passenger_count_result = [dict(row) for row in passenger_count]
+    passenger_count_json = json.dumps(str(passenger_count_result))
+    return (passenger_count_json)
+
+
+app.run()
